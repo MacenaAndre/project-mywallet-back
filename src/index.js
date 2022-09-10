@@ -96,4 +96,25 @@ app.post("/log-in", async (req, res) => {
     
 
 });
+
+app.get("/data", async (req, res) => {
+    const {authorization} = req.headers;
+    const token = authorization.replace("Bearer ", "");
+
+    try {
+        const validSession = await db.collection("sessions").findOne({token: token});
+
+        if(!validSession) {
+            return res.status(401).send({message: "Invalid token"})
+        };
+
+        const userHistory = await db.collection("data").find({userId: validSession.userId}).toArray();
+        console.log(userHistory);
+        res.status(200).send(userHistory);
+
+    } catch (error) {
+        return res.status(500).send(error.message);
+    };
+});
+
 app.listen(5000, () => console.log("Listening on port 5000..."));
