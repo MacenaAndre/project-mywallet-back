@@ -3,6 +3,7 @@ import cors from 'cors';
 import { MongoClient } from "mongodb";
 import joi from 'joi';
 import bcrypt from "bcrypt"
+import { v4 as uuid } from "uuid"
 import dotenv from "dotenv";
 dotenv.config();
 
@@ -21,8 +22,13 @@ mongoClient.connect().then(() => {
 const registerSchema = joi.object({
     name: joi.string().required().empty(),
     email: joi.string().email().required(),
-    password: joi.string().required(),
+    password: joi.string().required().min(4),
     confirm_password: joi.ref("password")
+});
+
+const LogInSchema = joi.object({
+    email: joi.string().email().required(),
+    password: joi.string().required().min(4)
 });
 
 app.post("/register", async (req, res) => {
@@ -55,4 +61,39 @@ app.post("/register", async (req, res) => {
 	}
 });
 
+app.post("/log-in", async (req, res) => {
+    const {email, password} = req.body;
+    const validation = LogInSchema.validate(req.body, {abortEarly: false});
+    const token = uuid();
+    
+    if(validation.error) {
+        return res.status(422).send({message: validation.error.details.map((value) => value.message).join(" & ")});
+    };
+    try {
+        const user = await db.collection("users").findOne({email: email});
+        const auth = await bcrypt.compare(password, user.passwordHash);
+
+        if(user && auth) {
+            db.collection("sessions").insertOne({
+                userId: user._id,
+                token
+            });
+
+            return res.status(200).send({
+                name: user.name,
+                email: user.email,
+                token
+            });
+
+        } else {
+            return res.status(401).send({message: "E-mail and/or password are invalid"});
+        };
+
+    } catch (error) {
+		return res.status(500).send(error.message);
+
+    }
+    
+
+});
 app.listen(5000, () => console.log("Listening on port 5000..."));
