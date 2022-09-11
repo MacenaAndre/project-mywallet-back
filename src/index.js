@@ -4,6 +4,7 @@ import { MongoClient } from "mongodb";
 import joi from 'joi';
 import bcrypt from "bcrypt"
 import { v4 as uuid } from "uuid"
+import dayjs from 'dayjs';
 import dotenv from "dotenv";
 dotenv.config();
 
@@ -31,16 +32,26 @@ const LogInSchema = joi.object({
     password: joi.string().required().min(4)
 });
 
+const entrySchema = joi.object({
+    value: joi.number().precision(2).required(),
+    description: joi.string().required().empty(),
+    isIncome: joi.boolean().required()
+});
+
 app.post("/register", async (req, res) => {
     const {name, email, password} = req.body;
     const validation = registerSchema.validate(req.body, {abortEarly: false});
-    const passwordHash = bcrypt.hashSync(password, 12);
 
     if (validation.error) {
-		return res.status(422).send({message: validation.error.details.map((value) => value.message).join(" & ")});
-	};
+        return res.status(422).send({message: validation.error.details.map((value) => value.message).join(" & ")});
+    };
+
+    if(!req.body.confirm_password) {
+        return res.status(422).send({message: "Please confirm your password"});
+    };
 
     try {
+        const passwordHash = bcrypt.hashSync(password, 12);
 		const users = await db.collection("users").find().toArray();
 		const invalidEmail = users.find((value) => value.email === email);
 
@@ -69,6 +80,7 @@ app.post("/log-in", async (req, res) => {
     if(validation.error) {
         return res.status(422).send({message: validation.error.details.map((value) => value.message).join(" & ")});
     };
+
     try {
         const user = await db.collection("users").findOne({email: email});
         const auth = await bcrypt.compare(password, user.passwordHash);
@@ -76,7 +88,8 @@ app.post("/log-in", async (req, res) => {
         if(user && auth) {
             db.collection("sessions").insertOne({
                 userId: user._id,
-                token
+                token,
+                logstatus: Date.now()
             });
 
             return res.status(200).send({
@@ -109,8 +122,39 @@ app.get("/data", async (req, res) => {
         };
 
         const userHistory = await db.collection("data").find({userId: validSession.userId}).toArray();
-        console.log(userHistory);
         res.status(200).send(userHistory);
+
+    } catch (error) {
+        return res.status(500).send(error.message);
+    };
+});
+
+app.post("/data", async (req, res) => {
+    const {authorization} = req.headers;
+    const {value, description, isIncome} = req.body;
+    const validation = entrySchema.validate(req.body, {abortEarly: false, convert: false});
+    const token = authorization.replace("Bearer ", "");
+
+    if(validation.error) {
+        return res.status(422).send({message: validation.error.details.map((value) => value.message).join(" & ")});
+    };
+        
+    try {
+        const validSession = await db.collection("sessions").findOne({token: token});
+
+        if(!validSession) {
+            return res.status(401).send({message: "Invalid token"})
+        };
+
+        await db.collection("data").insertOne({
+            value,
+            description,
+            isIncome,
+            userId: validSession.userId,
+            date: dayjs().format("DD/MM")
+        });
+
+        return res.status(201).send({message: "Entry posted successfully"});
 
     } catch (error) {
         return res.status(500).send(error.message);
