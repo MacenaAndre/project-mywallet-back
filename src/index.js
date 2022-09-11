@@ -72,7 +72,7 @@ app.post("/register", async (req, res) => {
 	}
 });
 
-app.post("/log-in", async (req, res) => {
+app.post("/session", async (req, res) => {
     const {email, password} = req.body;
     const validation = LogInSchema.validate(req.body, {abortEarly: false});
     const token = uuid();
@@ -110,9 +110,32 @@ app.post("/log-in", async (req, res) => {
 
 });
 
+app.delete("/session", async (req, res) => {
+    const {authorization} = req.headers;
+    const token = authorization?.replace('Bearer ', '');
+
+    if(!token) return res.status(401).send({message: "headers is required with the following format {Authorization: Bearer 'token'}"});
+
+    try {
+        const validSession = await db.collection("sessions").findOne({token: token});
+
+        if(!validSession) {
+            return res.status(401).send({message: "Invalid token"})
+        };
+
+        await db.collection("sessions").deleteOne({token: token});
+        return res.status(200).send("User logged out");
+
+    } catch (error) {
+        return res.status(500).send(error.message);
+    }
+});
+
 app.get("/data", async (req, res) => {
     const {authorization} = req.headers;
-    const token = authorization.replace("Bearer ", "");
+    const token = authorization?.replace('Bearer ', '');
+
+    if(!token) return res.status(401).send({message: "headers is required with the following format {Authorization: Bearer 'token'}"});
 
     try {
         const validSession = await db.collection("sessions").findOne({token: token});
@@ -133,7 +156,9 @@ app.post("/data", async (req, res) => {
     const {authorization} = req.headers;
     const {value, description, isIncome} = req.body;
     const validation = entrySchema.validate(req.body, {abortEarly: false, convert: false});
-    const token = authorization.replace("Bearer ", "");
+    const token = authorization?.replace("Bearer ", "");
+
+    if(!token) return res.status(401).send({message: "headers is required with the following format {Authorization: Bearer token}"});
 
     if(validation.error) {
         return res.status(422).send({message: validation.error.details.map((value) => value.message).join(" & ")});
