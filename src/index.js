@@ -1,6 +1,6 @@
 import express from 'express';
 import cors from 'cors';
-import { MongoClient } from "mongodb";
+import { MongoClient, ObjectId } from "mongodb";
 import joi from 'joi';
 import bcrypt from "bcrypt"
 import { v4 as uuid } from "uuid"
@@ -167,9 +167,7 @@ app.post("/data", async (req, res) => {
     try {
         const validSession = await db.collection("sessions").findOne({token: token});
 
-        if(!validSession) {
-            return res.status(401).send({message: "Invalid token"})
-        };
+        if(!validSession) return res.status(401).send({message: "Invalid token"});
 
         await db.collection("data").insertOne({
             value,
@@ -184,6 +182,27 @@ app.post("/data", async (req, res) => {
     } catch (error) {
         return res.status(500).send(error.message);
     };
+});
+
+app.delete("/data/:idEntry", async (req, res) => {
+    const {authorization} = req.headers;
+    const {idEntry} = req.params;
+    const token = authorization?.replace('Bearer ', '');
+
+    if(!token) return res.status(401).send({message: "headers is required with the following format {Authorization: Bearer 'token'}"});
+
+    try {
+        const entry = await db.collection("data").findOne({_id: new ObjectId(idEntry)});
+
+        if(!entry) return res.status(404).send({message: "id invalid"});
+
+        await db.collection("data").deleteOne({_id: new ObjectId(idEntry)});
+
+        return res.status(200).send("Entry deleted");
+
+    } catch (error) {
+        return res.status(500).send(error.message);
+    }
 });
 
 app.listen(5000, () => console.log("Listening on port 5000..."));
