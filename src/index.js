@@ -9,11 +9,14 @@ import dotenv from "dotenv";
 dotenv.config();
 
 const app = express();
+const hour = 1000 * 60 * 60;
+const day = hour * 24;
+const month = day * 30;
+
 app.use(cors());
 app.use(express.json());
 
 const mongoClient = new MongoClient(process.env.MONGO_URI);
-
 let db;
 
 mongoClient.connect().then(() => {
@@ -84,6 +87,7 @@ app.post("/session", async (req, res) => {
     try {
         const user = await db.collection("users").findOne({email: email});
         const auth = await bcrypt.compare(password, user.passwordHash);
+        //aqui
 
         if(user && auth) {
             db.collection("sessions").insertOne({
@@ -144,8 +148,9 @@ app.get("/data", async (req, res) => {
             return res.status(401).send({message: "Invalid token"})
         };
 
+        const user = await db.collection("users").findOne({_id: validSession.userId});
         const userHistory = await db.collection("data").find({userId: validSession.userId}).toArray();
-        res.status(200).send(userHistory);
+        res.status(200).send({name: user.name, history: userHistory});
 
     } catch (error) {
         return res.status(500).send(error.message);
@@ -170,7 +175,7 @@ app.post("/data", async (req, res) => {
         if(!validSession) return res.status(401).send({message: "Invalid token"});
 
         await db.collection("data").insertOne({
-            value,
+            value: (value/100).toFixed(2),
             description,
             isIncome,
             userId: validSession.userId,
@@ -204,5 +209,20 @@ app.delete("/data/:idEntry", async (req, res) => {
         return res.status(500).send(error.message);
     }
 });
+
+setInterval( async () => {
+    try {
+        const users = await db.collection("sessions").find().toArray();
+        const timedOutSessions = users.filter((value) => ((Date.now() - value.logstatus) > month));
+
+        timedOutSessions.forEach(async (value) => 
+            db.collection("sessions").deleteOne({_id: value._id}
+        ));
+    
+    } catch (error) {
+        console.error(error.message);
+    }
+    
+}, day);
 
 app.listen(5000, () => console.log("Listening on port 5000..."));
